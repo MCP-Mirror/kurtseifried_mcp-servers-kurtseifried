@@ -1,0 +1,35 @@
+{
+  "name": "@modelcontextprotocol/server-mongodb",
+  "version": "0.1.0",
+  "description": "MCP server for MongoDB database interactions",
+  "type": "module",
+  "bin": {
+    "mcp-server-mongodb": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && shx chmod +x dist/index.js",
+    "prepare": "npm run build",
+    "watch": "tsc --watch"
+  },
+  "dependencies": {
+    "mongodb": "^6.3.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "shx": "^0.3.4",
+    "typescript": "^5.3.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kurtseifried/mcp-servers-kurtseifried"
+  },
+  "author": "Kurt Seifried",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
