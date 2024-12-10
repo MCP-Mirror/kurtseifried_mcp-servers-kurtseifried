@@ -5,23 +5,30 @@ import { createInterface } from 'readline';
 import { Command, CommandSchema } from './schemas.js';
 
 interface MongoConfig {
-  uri?: string;
-  defaultDb?: string;
+  uri: string;
+  defaultDb: string;
 }
 
 // Get config from environment or use defaults
 const config: MongoConfig = {
-  uri: process.env.MONGODB_URI || 'mongodb://localhost:27017',
-  defaultDb: process.env.MONGODB_DB || 'claude_db'
+  uri: process.env.MONGODB_URI ?? 'mongodb://localhost:27017',
+  defaultDb: process.env.MONGODB_DB ?? 'claude_db'
 };
 
 const client = new MongoClient(config.uri);
 
-// Connect to MongoDB
+// Connect to MongoDB and create default database if it doesn't exist
 async function connectDB(): Promise<void> {
     try {
         await client.connect();
         console.error('Connected to MongoDB at', config.uri);
+        
+        // Creating a collection will create the database if it doesn't exist
+        const db = client.db(config.defaultDb);
+        await db.createCollection('_init');
+        await db.collection('_init').drop().catch(() => {}); // Clean up initialization collection
+        
+        console.error(`Ensured database '${config.defaultDb}' exists`);
     } catch (error) {
         console.error('MongoDB connection error:', error);
         process.exit(1);
@@ -66,13 +73,38 @@ rl.on('line', async (line: string) => {
     }
 });
 
+// Ensure database exists
+async function ensureDatabase(dbName: string): Promise<void> {
+    const db = client.db(dbName);
+    await db.createCollection('_init');
+    await db.collection('_init').drop().catch(() => {});
+}
+
+// Type guard for commands that have dbName
+function hasDbName(command: Command): command is Exclude<Command, { command: 'health' | 'listDatabases' }> {
+    return 'dbName' in command;
+}
+
 // Request handler
 async function handleRequest(request: Command): Promise<unknown> {
-    const db = client.db(request.dbName || config.defaultDb);
+    // Only get dbName for commands that should have it
+    const dbName = hasDbName(request) ? request.dbName : config.defaultDb;
+    
+    // For operations that need a database, ensure it exists first
+    if (request.command !== 'health' && request.command !== 'listDatabases') {
+        await ensureDatabase(dbName);
+    }
+    
+    const db = client.db(dbName);
     
     switch (request.command) {
         case 'health':
-            return { status: 'ok', version: '0.1.0' };
+            return { 
+                status: 'ok', 
+                version: '0.1.0',
+                defaultDb: config.defaultDb,
+                uri: config.uri.replace(/\/[^/]+:[^@]+@/, '***@') // Hide auth details if present
+            };
 
         case 'listDatabases': {
             const adminDb = client.db().admin();
@@ -81,7 +113,8 @@ async function handleRequest(request: Command): Promise<unknown> {
         }
 
         case 'listCollections': {
-            return await db.listCollections().toArray();
+            const collections = await db.listCollections().toArray();
+            return collections.filter(col => col.name !== '_init');
         }
 
         case 'createDocument': {
