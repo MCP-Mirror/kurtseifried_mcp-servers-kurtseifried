@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 
 import { MongoClient, ObjectId } from 'mongodb';
-import { readFileSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
 import { createInterface } from 'readline';
 import { Command, CommandSchema } from './schemas.js';
 
@@ -12,29 +9,19 @@ interface MongoConfig {
   defaultDb?: string;
 }
 
-// Load config from Claude desktop config
-function loadConfig(): MongoConfig {
-    const configPath = join(homedir(), 'Library/Application Support/Claude/claude_desktop_config.json');
-    try {
-        const configFile = readFileSync(configPath, 'utf8');
-        const config = JSON.parse(configFile);
-        return config.mcpServers?.mongodb?.config || {};
-    } catch (error) {
-        console.error('Error loading config:', error);
-        return {};
-    }
-}
+// Get config from environment or use defaults
+const config: MongoConfig = {
+  uri: process.env.MONGODB_URI || 'mongodb://localhost:27017',
+  defaultDb: process.env.MONGODB_DB || 'claude_db'
+};
 
-const config = loadConfig();
-const uri = config.uri || 'mongodb://localhost:27017';
-const defaultDb = config.defaultDb || 'claude_db';
-const client = new MongoClient(uri);
+const client = new MongoClient(config.uri);
 
 // Connect to MongoDB
 async function connectDB(): Promise<void> {
     try {
         await client.connect();
-        console.error('Connected to MongoDB');
+        console.error('Connected to MongoDB at', config.uri);
     } catch (error) {
         console.error('MongoDB connection error:', error);
         process.exit(1);
@@ -72,7 +59,7 @@ rl.on('line', async (line: string) => {
         const parsedRequest = JSON.parse(line);
         const request = CommandSchema.parse(parsedRequest);
         const response = await handleRequest(request);
-        console.log(JSON.stringify(response));
+        console.log(JSON.stringify({ result: response }));
     } catch (error) {
         console.error('Error processing request:', error);
         console.log(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }));
@@ -81,68 +68,72 @@ rl.on('line', async (line: string) => {
 
 // Request handler
 async function handleRequest(request: Command): Promise<unknown> {
+    const db = client.db(request.dbName || config.defaultDb);
+    
     switch (request.command) {
         case 'health':
-            return { status: 'ok' };
+            return { status: 'ok', version: '0.1.0' };
 
         case 'listDatabases': {
             const adminDb = client.db().admin();
-            return await adminDb.listDatabases();
+            const result = await adminDb.listDatabases();
+            return result.databases;
         }
 
         case 'listCollections': {
-            const db = client.db(request.dbName);
             return await db.listCollections().toArray();
         }
 
         case 'createDocument': {
-            const db = client.db(request.dbName);
             const collection = db.collection(request.collectionName);
-            return await collection.insertOne(request.document);
+            const result = await collection.insertOne(request.document);
+            return { id: result.insertedId, acknowledged: result.acknowledged };
         }
 
         case 'findDocuments': {
-            const db = client.db(request.dbName);
             const collection = db.collection(request.collectionName);
             return await collection.find(request.query || {}).toArray();
         }
 
         case 'updateDocument': {
-            const db = client.db(request.dbName);
             const collection = db.collection(request.collectionName);
-            return await collection.updateOne(
+            const result = await collection.updateOne(
                 { _id: new ObjectId(request.id) },
                 { $set: request.update }
             );
+            return { 
+                matchedCount: result.matchedCount,
+                modifiedCount: result.modifiedCount,
+                acknowledged: result.acknowledged
+            };
         }
 
         case 'deleteDocument': {
-            const db = client.db(request.dbName);
             const collection = db.collection(request.collectionName);
-            return await collection.deleteOne({ _id: new ObjectId(request.id) });
+            const result = await collection.deleteOne({ _id: new ObjectId(request.id) });
+            return { 
+                deletedCount: result.deletedCount,
+                acknowledged: result.acknowledged
+            };
         }
 
         case 'aggregate': {
-            const db = client.db(request.dbName);
             const collection = db.collection(request.collectionName);
             return await collection.aggregate(request.pipeline).toArray();
         }
 
         case 'createIndex': {
-            const db = client.db(request.dbName);
             const collection = db.collection(request.collectionName);
             const indexName = await collection.createIndex(request.keys, request.options || {});
             return { indexName };
         }
 
         case 'listIndexes': {
-            const db = client.db(request.dbName);
             const collection = db.collection(request.collectionName);
             return await collection.indexes();
         }
 
         case 'dropCollection': {
-            const db = client.db(request.dbName);
             const result = await db.collection(request.collectionName).drop();
             return { dropped: result };
         }

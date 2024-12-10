@@ -1,10 +1,10 @@
 {
-  "name": "@modelcontextprotocol/server-mongodb",
+  "name": "mcp-server-mongodb",
   "version": "0.1.0",
   "description": "MCP server for MongoDB database interactions",
   "type": "module",
   "bin": {
-    "mcp-server-mongodb": "dist/index.js"
+    "mcp-server-mongodb": "./dist/index.js"
   },
   "files": [
     "dist"
@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsc && shx chmod +x dist/index.js",
     "prepare": "npm run build",
+    "start": "node dist/index.js",
     "watch": "tsc --watch"
   },
   "dependencies": {
