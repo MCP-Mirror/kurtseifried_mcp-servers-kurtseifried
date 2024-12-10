@@ -4,15 +4,158 @@ import { MongoClient, ObjectId } from 'mongodb';
 import { createInterface } from 'readline';
 import { Command, CommandSchema } from './schemas.js';
 
+// Announce capabilities to Claude Desktop
+console.log(JSON.stringify({
+    functions: [
+        {
+            name: "mongodb_health",
+            description: "Check MongoDB server health status",
+            parameters: {
+                type: "object",
+                properties: {},
+                required: []
+            }
+        },
+        {
+            name: "mongodb_listDatabases",
+            description: "List all available MongoDB databases",
+            parameters: {
+                type: "object",
+                properties: {},
+                required: []
+            }
+        },
+        {
+            name: "mongodb_listCollections",
+            description: "List all collections in a database",
+            parameters: {
+                type: "object",
+                properties: {
+                    dbName: { type: "string", description: "Database name" }
+                },
+                required: ["dbName"]
+            }
+        },
+        {
+            name: "mongodb_createDocument",
+            description: "Create a new document in a collection",
+            parameters: {
+                type: "object",
+                properties: {
+                    dbName: { type: "string", description: "Database name" },
+                    collectionName: { type: "string", description: "Collection name" },
+                    document: { type: "object", description: "Document to insert" }
+                },
+                required: ["dbName", "collectionName", "document"]
+            }
+        },
+        {
+            name: "mongodb_findDocuments",
+            description: "Find documents in a collection",
+            parameters: {
+                type: "object",
+                properties: {
+                    dbName: { type: "string", description: "Database name" },
+                    collectionName: { type: "string", description: "Collection name" },
+                    query: { type: "object", description: "Query filter" }
+                },
+                required: ["dbName", "collectionName"]
+            }
+        },
+        {
+            name: "mongodb_updateDocument",
+            description: "Update an existing document",
+            parameters: {
+                type: "object",
+                properties: {
+                    dbName: { type: "string", description: "Database name" },
+                    collectionName: { type: "string", description: "Collection name" },
+                    id: { type: "string", description: "Document ID" },
+                    update: { type: "object", description: "Update operations" }
+                },
+                required: ["dbName", "collectionName", "id", "update"]
+            }
+        },
+        {
+            name: "mongodb_deleteDocument",
+            description: "Delete a document",
+            parameters: {
+                type: "object",
+                properties: {
+                    dbName: { type: "string", description: "Database name" },
+                    collectionName: { type: "string", description: "Collection name" },
+                    id: { type: "string", description: "Document ID" }
+                },
+                required: ["dbName", "collectionName", "id"]
+            }
+        },
+        {
+            name: "mongodb_aggregate",
+            description: "Run an aggregation pipeline",
+            parameters: {
+                type: "object",
+                properties: {
+                    dbName: { type: "string", description: "Database name" },
+                    collectionName: { type: "string", description: "Collection name" },
+                    pipeline: { 
+                        type: "array", 
+                        items: { type: "object" },
+                        description: "Aggregation pipeline stages" 
+                    }
+                },
+                required: ["dbName", "collectionName", "pipeline"]
+            }
+        },
+        {
+            name: "mongodb_createIndex",
+            description: "Create an index on a collection",
+            parameters: {
+                type: "object",
+                properties: {
+                    dbName: { type: "string", description: "Database name" },
+                    collectionName: { type: "string", description: "Collection name" },
+                    keys: { type: "object", description: "Index keys" },
+                    options: { type: "object", description: "Index options" }
+                },
+                required: ["dbName", "collectionName", "keys"]
+            }
+        },
+        {
+            name: "mongodb_listIndexes",
+            description: "List indexes for a collection",
+            parameters: {
+                type: "object",
+                properties: {
+                    dbName: { type: "string", description: "Database name" },
+                    collectionName: { type: "string", description: "Collection name" }
+                },
+                required: ["dbName", "collectionName"]
+            }
+        },
+        {
+            name: "mongodb_dropCollection",
+            description: "Drop a collection",
+            parameters: {
+                type: "object",
+                properties: {
+                    dbName: { type: "string", description: "Database name" },
+                    collectionName: { type: "string", description: "Collection name" }
+                },
+                required: ["dbName", "collectionName"]
+            }
+        }
+    ]
+}));
+
 interface MongoConfig {
-  uri: string;
-  defaultDb: string;
+    uri: string;
+    defaultDb: string;
 }
 
 // Get config from environment or use defaults
 const config: MongoConfig = {
-  uri: process.env.MONGODB_URI ?? 'mongodb://localhost:27017',
-  defaultDb: process.env.MONGODB_DB ?? 'claude_db'
+    uri: process.env.MONGODB_URI ?? 'mongodb://localhost:27017',
+    defaultDb: process.env.MONGODB_DB ?? 'claude_db'
 };
 
 const client = new MongoClient(config.uri);
@@ -60,10 +203,25 @@ const rl = createInterface({
     terminal: false
 });
 
+// Map function names to commands
+function mapFunctionToCommand(name: string): string {
+    return name.replace('mongodb_', '');
+}
+
 // Handle incoming messages
 rl.on('line', async (line: string) => {
     try {
         const parsedRequest = JSON.parse(line);
+        // Map function name to command name if needed
+        if (parsedRequest.name && parsedRequest.name.startsWith('mongodb_')) {
+            parsedRequest.command = mapFunctionToCommand(parsedRequest.name);
+            delete parsedRequest.name;
+            // Move parameters to top level
+            if (parsedRequest.parameters) {
+                Object.assign(parsedRequest, parsedRequest.parameters);
+                delete parsedRequest.parameters;
+            }
+        }
         const request = CommandSchema.parse(parsedRequest);
         const response = await handleRequest(request);
         console.log(JSON.stringify({ result: response }));
