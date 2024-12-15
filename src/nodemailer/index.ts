@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { Server } from "@modelcontextprotocol/sdk/dist/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/dist/server/stdio.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+  CallToolRequest
+} from "@modelcontextprotocol/sdk/dist/types.js";
 import nodemailer, { type SendMailOptions } from 'nodemailer';
 import { sendEmailArgsSchema, sendEmailToolSchema, type ServerConfig } from "./schema.js";
 
@@ -50,7 +51,7 @@ class EmailServer {
     }));
 
     // Handle tool execution
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    this.server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
       if (request.params.name !== "send_email") {
         throw new Error(`Unknown tool: ${request.params.name}`);
       }
